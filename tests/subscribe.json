@@ -30,7 +30,7 @@
     "requestId": "req-id",
     "requestTime": "13/Jun/2022:06:56:57 +0000",
     "requestTimeEpoch": 1655103417249,
-    "routeKey": "$connect",
+    "routeKey": "subscribe",
     "stage": "test"
   },
   "stageVariables": {},
@@ -45,7 +45,9 @@
   "env_config": {
     "function_name": "a-lambda"
   },
+  "body":"{\"room_id\" : \"db2aadca-cd4f-41c3-82e1-a3a0955569fe\"}",
   "memory": 128,
   "log_stream": "log-stream-id",
   "log_group": "log-group-id"
 }
+
