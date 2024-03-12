@@ -55,6 +55,10 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                     handle_subscribe(&client, &connection_id, body, &env).await?;
 
                 }
+
+                else if route == "unsubscribe" {
+                    handle_unsubscribe(&client, &connection_id, &env).await?;
+                }
             },
 
             None => todo!()
@@ -81,7 +85,7 @@ async fn handle_create(client: &Client, connection_id: &str, env:&Config) -> Res
 
     let uuid = Uuid::new_v4();
 
-    // Need make the following atomic
+    // Need to make the following atomic
 
     client.update_item()
         .table_name(&env.connection_table)
@@ -113,7 +117,7 @@ async fn handle_subscribe(client: &Client, connection_id: &str, body: &Body, env
     
     let room_id = body_data.room_id;
     
-    // Need make the following atomic
+    // Need to make the following atomic
 
     client.update_item()
         .table_name(&env.room_table)
@@ -128,6 +132,20 @@ async fn handle_subscribe(client: &Client, connection_id: &str, body: &Body, env
         .update_expression("SET RoomID = :room")
         .expression_attribute_values(":room", AttributeValue::S(room_id))
         .send().await?;
+
+    Ok(())
+}
+
+async fn handle_unsubscribe(client: &Client, connection_id: &str, env: &Config) -> Result<(), Error> {
+    let mut response = client.get_item()
+                .table_name(&env.connection_table)
+                .key(&env.connection_pkey, AttributeValue::S(connection_id.to_string()))
+                .projection_expression("RoomID")
+                .send().await?;
+    let item = response.item.take();
+
+    let room_id = item.unwrap().get("RoomID");
+                
 
     Ok(())
 }
