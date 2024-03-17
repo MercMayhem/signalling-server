@@ -2,7 +2,7 @@ use std::env;
 use uuid::Uuid;
 use serde_json;
 use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Response, request::RequestContext};
-use aws_sdk_dynamodb::{Client, types::AttributeValue};
+use aws_sdk_dynamodb::{Client, types::{AttributeValue, Update, TransactWriteItem}};
 use aws_config::from_env;
 use serde::Deserialize;
 
@@ -145,13 +145,13 @@ async fn handle_unsubscribe(client: &Client, connection_id: &str, env: &Config) 
                 .send().await?;
 
     let item = response.item.take();
-    let room_id: &str = "";
+    let mut room_id: String = "".to_string();
 
     if let Some(val) = item {
-        let room_id = val.get("RoomID")
+        room_id = val.get("RoomID")
                         .map(|attribute_val| if let AttributeValue::S(val) = attribute_val 
-                             { return val.as_str() }
-                             else { "" })
+                             { return val.to_string() }
+                             else { "".to_string() })
                         .unwrap();
     }
 
@@ -189,8 +189,33 @@ async fn handle_unsubscribe(client: &Client, connection_id: &str, env: &Config) 
     let connection_list_index = connection_list_index.unwrap();
 
     // Craft transaction in rooms
+    let update_operation = Update::builder()
+                            .table_name(&env.room_table)
+                            .key(&env.room_pkey, AttributeValue::S(room_id.to_string()))
+                            .update_expression(format!("REMOVE subscribers[{}]", connection_list_index.to_string()))
+                            .build()?;
+
+    let transaction_1 = TransactWriteItem::builder()
+                            .set_update(Some(update_operation))
+                            .build();
     
     // Craft transaction in connections
+    let update_operation2 = Update::builder()
+                            .table_name(&env.connection_table)
+                            .key(&env.connection_pkey, AttributeValue::S(connection_id.to_string()))
+                            .update_expression("REMOVE RoomID")
+                            .build()?;
+
+    let transaction_2 = TransactWriteItem::builder()
+                            .set_update(Some(update_operation2))
+                            .build();
+
+    // Send Query transanction
+    
+    client.transact_write_items()
+        .transact_items(transaction_1)
+        .transact_items(transaction_2)
+        .send().await?;
 
     Ok(())
 }

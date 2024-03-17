@@ -30,7 +30,7 @@
     "requestId": "req-id",
     "requestTime": "13/Jun/2022:06:56:57 +0000",
     "requestTimeEpoch": 1655103417249,
-    "routeKey": "subscribe",
+    "routeKey": "unsubscribe",
     "stage": "test"
   },
   "stageVariables": {},
