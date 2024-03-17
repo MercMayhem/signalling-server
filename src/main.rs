@@ -137,15 +137,60 @@ async fn handle_subscribe(client: &Client, connection_id: &str, body: &Body, env
 }
 
 async fn handle_unsubscribe(client: &Client, connection_id: &str, env: &Config) -> Result<(), Error> {
+    // Get room in which connection is present
     let mut response = client.get_item()
                 .table_name(&env.connection_table)
                 .key(&env.connection_pkey, AttributeValue::S(connection_id.to_string()))
                 .projection_expression("RoomID")
                 .send().await?;
-    let item = response.item.take();
 
-    let room_id = item.unwrap().get("RoomID");
-                
+    let item = response.item.take();
+    let room_id: &str = "";
+
+    if let Some(val) = item {
+        let room_id = val.get("RoomID")
+                        .map(|attribute_val| if let AttributeValue::S(val) = attribute_val 
+                             { return val.as_str() }
+                             else { "" })
+                        .unwrap();
+    }
+
+    else {
+        return Err("didn't receive item".into())
+    }
+
+    if room_id == ""{
+        return Err("connection not associated with a room".into());
+    }
+    
+    // Get index of connectionID in rooms table
+    response = client.get_item()
+                .table_name(&env.room_table)
+                .key(&env.room_pkey, AttributeValue::S(room_id.to_string()))
+                .projection_expression("subscribers")
+                .send().await?;
+
+    let room_item = response.item.take();
+    let connection_list_index = room_item
+                                .filter(|item| item.get("subscribers").is_some() )
+                                .filter(|item| if let AttributeValue::L(_) = item.get("subscribers").unwrap(){
+                                    return true;
+                                } else { return false})
+                                .map(|item| {
+                                    let list = item.get("subscribers").unwrap().as_l().unwrap();
+                                    for (index, connection) in list.iter().enumerate(){
+                                        if connection.as_s().is_ok() && connection.as_s().unwrap() == connection_id {return Some(index)}
+                                    }
+                                    return None
+                                })
+                                .unwrap();
+
+    if connection_list_index.is_none() { return Err("Couldn't find the connection id in subscribers list".into()) }
+    let connection_list_index = connection_list_index.unwrap();
+
+    // Craft transaction in rooms
+    
+    // Craft transaction in connections
 
     Ok(())
 }
