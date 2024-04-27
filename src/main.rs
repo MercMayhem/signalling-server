@@ -5,6 +5,7 @@ use lambda_http::{run, service_fn, tracing, Body, Error, Request, RequestExt, Re
 use aws_sdk_dynamodb::{Client, types::{AttributeValue, Update, TransactWriteItem}};
 use aws_config::from_env;
 use serde::Deserialize;
+use aws_sdk_apigatewaymanagement::{self, primitives::Blob};
 
 /// This is the main body for the function.
 /// Write your code inside it.
@@ -59,9 +60,15 @@ async fn function_handler(event: Request) -> Result<Response<Body>, Error> {
                 else if route == "unsubscribe" {
                     handle_unsubscribe(&client, &connection_id, &env).await?;
                 }
+
+                else if route == "send" {
+                    let body = event.body();
+                    let apigw_client = aws_sdk_apigatewaymanagement::client::Client::new(&config);
+                    handle_send(&client, &apigw_client, &connection_id, body, &env).await?;
+                } 
             },
 
-            None => todo!()
+            None => {}
         }
 
     } else {
@@ -216,6 +223,40 @@ async fn handle_unsubscribe(client: &Client, connection_id: &str, env: &Config) 
         .transact_items(transaction_1)
         .transact_items(transaction_2)
         .send().await?;
+
+    Ok(())
+}
+
+ async fn handle_send(db_client: &Client, apigw_client: &aws_sdk_apigatewaymanagement::client::Client, connection_id: &str, body: &Body, env: &Config) -> Result<(), Error>{
+    let room_id = db_client.get_item()
+                    .table_name(&env.connection_table)
+                    .key(&env.connection_pkey, AttributeValue::S(connection_id.to_string()))
+                    .projection_expression("RoomID")
+                    .send().await?
+                    .item().unwrap()
+                    .get("RoomID").unwrap().clone();
+
+    let subscribed_connections_attval = db_client.get_item()
+                                    .table_name(&env.room_table)
+                                    .key(&env.room_pkey, room_id)
+                                    .projection_expression("subscribers")
+                                    .send().await?
+                                    .item().unwrap()
+                                    .get("subscribers").unwrap().clone();
+
+    if let AttributeValue::L(subscribed_connections) = subscribed_connections_attval{
+        for connection_attval in subscribed_connections{
+            if let AttributeValue::S(connection) = connection_attval {
+                if connection != connection_id {
+                    apigw_client.post_to_connection()
+                        .data(Blob::new(body.to_vec()))
+                        .connection_id(connection)
+                        .send().await?;
+                }
+            }
+        }
+    }
+    
 
     Ok(())
 }
